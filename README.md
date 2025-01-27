@@ -1,1 +1,3 @@
 # VideoEncryptorCUDA
+
+Solomon
