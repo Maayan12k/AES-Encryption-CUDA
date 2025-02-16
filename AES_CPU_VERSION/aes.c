@@ -193,18 +193,7 @@ static void KeyExpansion(uint8_t *RoundKey, const uint8_t *Key)
 
       tempa[0] = tempa[0] ^ Rcon[i / Nk];
     }
-#if defined(AES256) && (AES256 == 1)
-    if (i % Nk == 4)
-    {
-      // Function Subword()
-      {
-        tempa[0] = getSBoxValue(tempa[0]);
-        tempa[1] = getSBoxValue(tempa[1]);
-        tempa[2] = getSBoxValue(tempa[2]);
-        tempa[3] = getSBoxValue(tempa[3]);
-      }
-    }
-#endif
+
     j = i * 4;
     k = (i - Nk) * 4;
     RoundKey[j + 0] = RoundKey[k + 0] ^ tempa[0];

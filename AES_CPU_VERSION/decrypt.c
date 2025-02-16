@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 #include "aes.h"
 
 #define BLOCK_SIZE 16
@@ -67,7 +68,14 @@ int main(int argc, char *argv[])
     // Initialize AES context and decrypt
     struct AES_ctx ctx;
     AES_init_ctx_iv(&ctx, key, iv);
+    printf("Decrypting...\n");
+    clock_t start, end;
+    double elapsed_time;
+    start = clock();
     AES_CBC_decrypt_buffer(&ctx, encrypted_data, encrypted_size);
+    end = clock();
+    elapsed_time = ((double)(end - start)) / CLOCKS_PER_SEC;
+    printf("Decryption time: %f seconds\n", elapsed_time);
 
     // Remove padding (PKCS#7)
     uint8_t padding_value = encrypted_data[encrypted_size - 1];

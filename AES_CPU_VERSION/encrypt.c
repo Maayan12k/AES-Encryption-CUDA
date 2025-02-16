@@ -82,7 +82,14 @@ int main(int argc, char *argv[])
     // Initialize AES context and encrypt
     struct AES_ctx ctx;
     AES_init_ctx_iv(&ctx, key, iv);
+    printf("Encrypting...\n");
+    clock_t start, end;
+    double elapsed_time;
+    start = clock();
     AES_CBC_encrypt_buffer(&ctx, buffer, padded_size);
+    end = clock();
+    elapsed_time = ((double)(end - start)) / CLOCKS_PER_SEC;
+    printf("Encryption time: %.6f seconds\n", elapsed_time);
 
     // Write IV and encrypted data to output file
     FILE *output_file = fopen(argv[2], "wb");

@@ -19,6 +19,6 @@ $(DECRYPT_BIN): $(DECRYPT_SRC)
 
 # Clean up build files
 clean:
-	rm -f $(ENCRYPT_BIN) $(DECRYPT_BIN)
+	rm -f $(ENCRYPT_BIN) $(DECRYPT_BIN) *.crypt
 
 .PHONY: all clean
