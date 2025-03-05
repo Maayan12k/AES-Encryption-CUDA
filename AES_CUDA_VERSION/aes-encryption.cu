@@ -30,7 +30,9 @@ static const uint8_t sbox[256] = {
     0xe1, 0xf8, 0x98, 0x11, 0x69, 0xd9, 0x8e, 0x94, 0x9b, 0x1e, 0x87, 0xe9, 0xce, 0x55, 0x28, 0xdf,
     0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16};
 
-static const uint8_t rsbox[256] = {
+__constant__ uint8_t constant_sbox[256];
+
+static const uint8_t inv_sbox[256] = {
     0x52, 0x09, 0x6a, 0xd5, 0x30, 0x36, 0xa5, 0x38, 0xbf, 0x40, 0xa3, 0x9e, 0x81, 0xf3, 0xd7, 0xfb,
     0x7c, 0xe3, 0x39, 0x82, 0x9b, 0x2f, 0xff, 0x87, 0x34, 0x8e, 0x43, 0x44, 0xc4, 0xde, 0xe9, 0xcb,
     0x54, 0x7b, 0x94, 0x32, 0xa6, 0xc2, 0x23, 0x3d, 0xee, 0x4c, 0x95, 0x0b, 0x42, 0xfa, 0xc3, 0x4e,
@@ -47,6 +49,8 @@ static const uint8_t rsbox[256] = {
     0x60, 0x51, 0x7f, 0xa9, 0x19, 0xb5, 0x4a, 0x0d, 0x2d, 0xe5, 0x7a, 0x9f, 0x93, 0xc9, 0x9c, 0xef,
     0xa0, 0xe0, 0x3b, 0x4d, 0xae, 0x2a, 0xf5, 0xb0, 0xc8, 0xeb, 0xbb, 0x3c, 0x83, 0x53, 0x99, 0x61,
     0x17, 0x2b, 0x04, 0x7e, 0xba, 0x77, 0xd6, 0x26, 0xe1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0c, 0x7d};
+
+__constant__ uint8_t constant_inv_sbox[256];
 
 /******************************************************************************************************* */
 /* Helper Functions*/
@@ -159,8 +163,19 @@ static void KeyExpansion(uint8_t *RoundKey, const uint8_t *Key)
 /* AES Functions*/
 /* START */
 
-__device__ void subBytes()
+__device__ void subBytes(uint8_t *index)
 {
+
+    for (int i = 0; i < 16; i++)
+    {
+        uint8_t byte = index[i];
+        uint8_t first4Bits = (byte & 0xF0) >> 4;
+        uint8_t last4Bits = byte & 0x0F;
+        uint8_t rowSize = 0x10;
+        int sbox_index = (first4Bits * 16) + last4Bits;
+
+        index[i] = constant_sbox[sbox_index];
+    }
 }
 
 __device__ void mixColumns()
@@ -176,15 +191,17 @@ __global__ void encryptAes(uint8_t *in, uint8_t *out, unsigned int n)
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int offset = idx * 128; // Each thread processes 128 bytes
 
-    if (offset < n)
+    if (offset >= n)
+        return;
+
+    subBytes(in + offset);
+
+    // Copy 128 bytes from input to output
+    for (int i = 0; i < 128; i++)
     {
-        // Copy 128 bytes from input to output
-        for (int i = 0; i < 128; i++)
+        if (offset + i < n)
         {
-            if (offset + i < n)
-            {
-                out[offset + i] = in[offset + i];
-            }
+            out[offset + i] = in[offset + i];
         }
     }
 }
@@ -235,14 +252,6 @@ int main(int argc, char *argv[])
 
     pad_data(buffer, file_size, padded_size);
 
-    // for (int i = 0; i < padded_size; i++) {
-    //     for (int bit = 7; bit >= 0; bit--) {
-    //         printf("%d", (buffer[i] >> bit) & 1);  // Extract and print each bit
-    //     }
-    //     printf(" ");  // Separate bytes with a space
-    // }
-    // printf("\n");
-
     // Generate a random IV
     uint8_t iv[BLOCK_SIZE];
     generate_random_iv(iv, BLOCK_SIZE);
@@ -258,6 +267,8 @@ int main(int argc, char *argv[])
     cudaMalloc((void **)&outBuff, sizeof(uint8_t) * padded_size);
 
     cudaMemcpy(inBuff, buffer, sizeof(uint8_t) * padded_size, cudaMemcpyHostToDevice);
+
+    cudaMemcpyToSymbol(constant_sbox, sbox, 256 * sizeof(uint8_t));
 
     int numThreads = padded_size / 128;
     dim3 blockDim(128);
