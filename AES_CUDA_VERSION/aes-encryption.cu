@@ -158,15 +158,33 @@ __device__ void subBytes(uint8_t *index)
     }
 }
 
+__device__ void shiftRows(uint8_t *index)
+{
+    uint8_t temp;
+
+    temp = index[1];
+    for (int i = 1; i <= 9; i += 4)
+        index[i] = index[i + 4];
+    index[13] = temp;
+
+    temp = index[2];
+    index[2] = index[10];
+    index[10] = temp;
+    temp = index[6];
+    index[6] = index[14];
+    index[14] = temp;
+
+    temp = index[15];
+    for (int i = 15; i >= 7; i -= 4)
+        index[i] = index[i - 4];
+    index[3] = temp;
+}
+
 __device__ void mixColumns()
 {
 }
 
 __device__ void addRoundRey()
-{
-}
-
-__device__ void shiftRows()
 {
 }
 
@@ -178,7 +196,9 @@ __global__ void encryptAes(uint8_t *in, uint8_t *out, unsigned int n)
     if (offset >= n)
         return;
 
-    subBytes(in + offset);
+    // subBytes(in + offset);
+    for (int i = 0; i < 4; i++) // calling shift rows 4 times, returns the matrix to its original state, for testing purposes
+        shiftRows(in + offset);
 
     // Copy 16 bytes from input to output
     for (int i = 0; i < 16; i++)
