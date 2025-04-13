@@ -12,7 +12,6 @@
 */
 
 #define BLOCK_SIZE 16
-#define Nb 4  // The number of 32 bit words in a key.
 #define Nk 4  // The number of 32 bit words in a key.
 #define Nr 10 // The number of rounds in AES Cipher.
 #define getInvSBoxValue(num) (inv_sbox[(num)])
@@ -61,29 +60,7 @@ double myCPUTimer()
     return ((double)tp.tv_sec + (double)tp.tv_usec / 1.0e6);
 }
 
-void generate_random_iv(uint8_t *iv, size_t length)
-{
-    srand(time(NULL));
-    for (size_t i = 0; i < length; i++)
-    {
-        iv[i] = rand() % 256;
-    }
-
-    printf("Random IV: ");
-    for (int i = 0; i < BLOCK_SIZE; i++)
-    {
-        printf("%02x ", iv[i]);
-    }
-    printf("\n");
-}
-
-void pad_data(uint8_t *data, size_t file_size, size_t padded_size)
-{
-    uint8_t padding_value = padded_size - file_size;
-    memset(data + file_size, padding_value, padding_value);
-}
-
-// This function produces Nb(Nr+1) round keys. The round keys are used in each round to decrypt the states.
+// This function produces Nb(Nk+1) round keys. The round keys are used in each round to decrypt the states.
 static void KeyExpansion(uint8_t *RoundKey, const uint8_t *Key)
 {
     unsigned i, j, k;
@@ -99,7 +76,7 @@ static void KeyExpansion(uint8_t *RoundKey, const uint8_t *Key)
     }
 
     // All other round keys are found from the previous round keys.
-    for (i = Nk; i < Nb * (Nr + 1); ++i)
+    for (i = Nk; i < Nk * (Nr + 1); ++i)
     {
 
         k = (i - 1) * 4;
@@ -142,7 +119,7 @@ static void KeyExpansion(uint8_t *RoundKey, const uint8_t *Key)
 /* AES Functions*/
 /* START */
 
-__device__ void subBytes(uint8_t *index)
+__device__ void invSubBytes(uint8_t *index)
 {
 
     for (int i = 0; i < 16; i++)
@@ -150,21 +127,20 @@ __device__ void subBytes(uint8_t *index)
         uint8_t byte = index[i];
         uint8_t first4Bits = (byte & 0xF0) >> 4;
         uint8_t last4Bits = byte & 0x0F;
-        uint8_t rowSize = 0x10;
         int inv_sbox_index = (first4Bits * 16) + last4Bits;
 
         index[i] = constant_inv_sbox[inv_sbox_index];
     }
 }
 
-__device__ void shiftRows(uint8_t *index)
+__device__ void invShiftRows(uint8_t *index)
 {
     uint8_t temp;
 
-    temp = index[1];
-    for (int i = 1; i <= 9; i += 4)
-        index[i] = index[i + 4];
-    index[13] = temp;
+    temp = index[13];
+    for (int i = 13; i >= 5; i -= 4)
+        index[i] = index[i - 4];
+    index[1] = temp;
 
     temp = index[2];
     index[2] = index[10];
@@ -173,18 +149,28 @@ __device__ void shiftRows(uint8_t *index)
     index[6] = index[14];
     index[14] = temp;
 
-    temp = index[15];
-    for (int i = 15; i >= 7; i -= 4)
-        index[i] = index[i - 4];
-    index[3] = temp;
+    temp = index[3];
+    for (int i = 3; i <= 11; i += 4)
+        index[i] = index[i + 4];
+    index[15] = temp;
 }
 
-__device__ __forceinline__ uint8_t xtime(uint8_t x)
+__device__ uint8_t gmul(uint8_t a, uint8_t b)
 {
-    return (x << 1) ^ ((-(x >> 7)) & 0x1B);
+    uint8_t result = 0;
+#pragma unroll
+    for (int i = 0; i < 8; i++)
+    {
+        result ^= -(b & 1) & a;
+        uint8_t high_bit = a >> 7;
+        a <<= 1;
+        a ^= (0x1b & -high_bit);
+        b >>= 1;
+    }
+    return result;
 }
 
-__device__ void mixColumns(uint8_t *state)
+__device__ void invMixColumns(uint8_t *index)
 {
     uint8_t temp[16];
 
@@ -193,27 +179,21 @@ __device__ void mixColumns(uint8_t *state)
     {
         int i = col * 4;
 
-        uint8_t s0 = state[i];
-        uint8_t s1 = state[i + 1];
-        uint8_t s2 = state[i + 2];
-        uint8_t s3 = state[i + 3];
+        uint8_t s0 = index[i];
+        uint8_t s1 = index[i + 1];
+        uint8_t s2 = index[i + 2];
+        uint8_t s3 = index[i + 3];
 
-        uint8_t xt0 = xtime(s0);
-        uint8_t xt1 = xtime(s1);
-        uint8_t xt2 = xtime(s2);
-        uint8_t xt3 = xtime(s3);
-
-        // MixColumns matrix multiplication in GF(2^8)
-        temp[i + 0] = xt0 ^ (xt1 ^ s1) ^ s2 ^ s3; // 2*s0 + 3*s1 + s2   + s3
-        temp[i + 1] = s0 ^ xt1 ^ (xt2 ^ s2) ^ s3; // s0   + 2*s1 + 3*s2 + s3
-        temp[i + 2] = s0 ^ s1 ^ xt2 ^ (xt3 ^ s3); // s0   + s1   + 2*s2 + 3*s3
-        temp[i + 3] = (xt0 ^ s0) ^ s1 ^ s2 ^ xt3; // 3*s0 + s1   + s2   + 2*s3
+        temp[i + 0] = gmul(s0, 0x0e) ^ gmul(s1, 0x0b) ^ gmul(s2, 0x0d) ^ gmul(s3, 0x09);
+        temp[i + 1] = gmul(s0, 0x09) ^ gmul(s1, 0x0e) ^ gmul(s2, 0x0b) ^ gmul(s3, 0x0d);
+        temp[i + 2] = gmul(s0, 0x0d) ^ gmul(s1, 0x09) ^ gmul(s2, 0x0e) ^ gmul(s3, 0x0b);
+        temp[i + 3] = gmul(s0, 0x0b) ^ gmul(s1, 0x0d) ^ gmul(s2, 0x09) ^ gmul(s3, 0x0e);
     }
 
 #pragma unroll
     for (int i = 0; i < 16; i++)
     {
-        state[i] = temp[i];
+        index[i] = temp[i];
     }
 }
 
@@ -229,7 +209,9 @@ __global__ void decryptAes(uint8_t *in, uint8_t *out, unsigned int n)
     if (offset >= n)
         return;
 
-    subBytes(in + offset);
+    // invSubBytes(in + offset);
+
+    invShiftRows(in + offset);
 
     // Copy 16 bytes from input to output
     for (int i = 0; i < 16; i++)
@@ -260,15 +242,12 @@ int main(int argc, char *argv[])
         return 1;
     }
     size_t file_size = file_stat.st_size;
-    size_t padded_size = (file_size % BLOCK_SIZE == 0) ? file_size : ((file_size / BLOCK_SIZE + 1) * BLOCK_SIZE);
 
     char *file_name = argv[1];
     printf("\nDecrypting file: \"%s\"\n", file_name);
-
     printf("\nFile Size: %d bytes\n", file_size);
-    printf("\nPadded file Size: %d \n", padded_size);
 
-    uint8_t *buffer = (uint8_t *)malloc(padded_size);
+    uint8_t *buffer = (uint8_t *)malloc(file_size);
     if (!buffer)
     {
         perror("Memory allocation failed");
@@ -285,8 +264,6 @@ int main(int argc, char *argv[])
     fread(buffer, 1, file_size, input_file);
     fclose(input_file);
 
-    pad_data(buffer, file_size, padded_size);
-
     // for (int i = 0; i < padded_size; i++) {
     //     for (int bit = 7; bit >= 0; bit--) {
     //         printf("%d", (buffer[i] >> bit) & 1);  // Extract and print each bit
@@ -295,10 +272,6 @@ int main(int argc, char *argv[])
     // }
     // printf("\n");
 
-    // Generate a random IV
-    uint8_t iv[BLOCK_SIZE];
-    generate_random_iv(iv, BLOCK_SIZE);
-
     // AES key
     uint8_t key[BLOCK_SIZE] = {
         0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
@@ -306,24 +279,23 @@ int main(int argc, char *argv[])
 
     printf("Decrypting...\n");
     uint8_t *inBuff, *outBuff;
-    cudaMalloc((void **)&inBuff, sizeof(uint8_t) * padded_size);
-    cudaMalloc((void **)&outBuff, sizeof(uint8_t) * padded_size);
+    cudaMalloc((void **)&inBuff, sizeof(uint8_t) * file_size);
+    cudaMalloc((void **)&outBuff, sizeof(uint8_t) * file_size);
 
-    cudaMemcpy(inBuff, buffer, sizeof(uint8_t) * padded_size, cudaMemcpyHostToDevice);
+    cudaMemcpy(inBuff, buffer, sizeof(uint8_t) * file_size, cudaMemcpyHostToDevice);
 
     cudaMemcpyToSymbol(constant_inv_sbox, inv_sbox, 256 * sizeof(uint8_t));
 
-    int numThreads = padded_size / 16;
+    int numThreads = file_size / 16;
     dim3 blockDim(16);
-    dim3 gridDim((numThreads + 16 - 1) / 16);
+    dim3 gridDim((numThreads));
 
-    decryptAes<<<gridDim, blockDim>>>(inBuff, outBuff, padded_size);
+    decryptAes<<<gridDim, blockDim>>>(inBuff, outBuff, file_size);
     CHECK(cudaDeviceSynchronize());
 
-    uint8_t *outFileBuff = (uint8_t *)calloc(padded_size, sizeof(uint8_t));
-    cudaMemcpy(outFileBuff, outBuff, sizeof(uint8_t) * padded_size, cudaMemcpyDeviceToHost);
+    uint8_t *outFileBuff = (uint8_t *)calloc(file_size, sizeof(uint8_t));
+    cudaMemcpy(outFileBuff, outBuff, sizeof(uint8_t) * file_size, cudaMemcpyDeviceToHost);
 
-    // Open the output file
     FILE *output_file = fopen(argv[2], "wb");
     if (!output_file)
     {
@@ -335,8 +307,10 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    // Write to the output file
-    fwrite(outFileBuff, sizeof(uint8_t), file_size, output_file);
+    uint8_t paddedValue = outFileBuff[file_size - 1];
+    size_t original_size = file_size - paddedValue;
+
+    fwrite(outFileBuff, sizeof(uint8_t), original_size, output_file);
     fclose(output_file);
 
     printf("Decryption complete. Output written to \"%s\"\n", argv[2]);

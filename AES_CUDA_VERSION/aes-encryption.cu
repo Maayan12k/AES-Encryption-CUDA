@@ -37,7 +37,6 @@ __constant__ uint8_t constant_sbox[256];
 /* START */
 
 #define BLOCK_SIZE 16
-#define Nb 4  // The number of 32 bit words in a key.
 #define Nk 4  // The number of 32 bit words in a key.
 #define Nr 10 // The number of rounds in AES Cipher.
 #define getSBoxValue(num) (sbox[(num)])
@@ -62,22 +61,6 @@ double myCPUTimer()
     return ((double)tp.tv_sec + (double)tp.tv_usec / 1.0e6);
 }
 
-void generate_random_iv(uint8_t *iv, size_t length)
-{
-    srand(time(NULL));
-    for (size_t i = 0; i < length; i++)
-    {
-        iv[i] = rand() % 256;
-    }
-
-    printf("Random IV: ");
-    for (int i = 0; i < BLOCK_SIZE; i++)
-    {
-        printf("%02x ", iv[i]);
-    }
-    printf("\n");
-}
-
 void pad_data(uint8_t *data, size_t file_size, size_t padded_size)
 {
     uint8_t padding_value = padded_size - file_size;
@@ -100,7 +83,7 @@ static void KeyExpansion(uint8_t *RoundKey, const uint8_t *Key)
     }
 
     // All other round keys are found from the previous round keys.
-    for (i = Nk; i < Nb * (Nr + 1); ++i)
+    for (i = Nk; i < Nk * (Nr + 1); ++i)
     {
 
         k = (i - 1) * 4;
@@ -151,7 +134,6 @@ __device__ void subBytes(uint8_t *index)
         uint8_t byte = index[i];
         uint8_t first4Bits = (byte & 0xF0) >> 4;
         uint8_t last4Bits = byte & 0x0F;
-        uint8_t rowSize = 0x10;
         int sbox_index = (first4Bits * 16) + last4Bits;
 
         index[i] = constant_sbox[sbox_index];
@@ -185,7 +167,7 @@ __device__ __forceinline__ uint8_t xtime(uint8_t x)
     return (x << 1) ^ ((-(x >> 7)) & 0x1B);
 }
 
-__device__ void mixColumns(uint8_t *state)
+__device__ void mixColumns(uint8_t *index)
 {
     uint8_t temp[16];
 
@@ -194,10 +176,10 @@ __device__ void mixColumns(uint8_t *state)
     {
         int i = col * 4;
 
-        uint8_t s0 = state[i];
-        uint8_t s1 = state[i + 1];
-        uint8_t s2 = state[i + 2];
-        uint8_t s3 = state[i + 3];
+        uint8_t s0 = index[i];
+        uint8_t s1 = index[i + 1];
+        uint8_t s2 = index[i + 2];
+        uint8_t s3 = index[i + 3];
 
         uint8_t xt0 = xtime(s0);
         uint8_t xt1 = xtime(s1);
@@ -214,11 +196,11 @@ __device__ void mixColumns(uint8_t *state)
 #pragma unroll
     for (int i = 0; i < 16; i++)
     {
-        state[i] = temp[i];
+        index[i] = temp[i];
     }
 }
 
-__device__ void addRoundRey()
+__device__ void addRoundRey(uint8_t *index, uint8_t *roundKey)
 {
 }
 
@@ -231,11 +213,11 @@ __global__ void encryptAes(uint8_t *in, uint8_t *out, unsigned int n)
         return;
 
     // subBytes(in + offset);
-    for (int i = 0; i < 8; i++) // calling shift rows 4 times, returns the matrix to its original state, for testing purposes
-        shiftRows(in + offset);
+    // for(int i = 0; i < 8; i++) //calling shift rows 4 times, returns the matrix to its original state, for testing purposes
+    // shiftRows(in + offset);
 
-    for (int i = 0; i < 8; i++) // calling mix columns 4 times, returns the matrix to its original state, for testing purposes
-        mixColumns(in + offset);
+    // for(int i = 0; i < 8; i++) //calling mix columns 4 times, returns the matrix to its original state, for testing purposes
+    mixColumns(in + offset);
 
     // Copy 16 bytes from input to output
     for (int i = 0; i < 16; i++)
@@ -301,14 +283,20 @@ int main(int argc, char *argv[])
     // }
     // printf("\n");
 
-    // Generate a random IV
-    uint8_t iv[BLOCK_SIZE];
-    generate_random_iv(iv, BLOCK_SIZE);
-
     // AES key
     uint8_t key[BLOCK_SIZE] = {
         0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
         0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c};
+
+    uint8_t roundKey[176];       // Round keys
+    KeyExpansion(roundKey, key); // Generate round keys
+
+    printf("Key: ");
+    for (int i = 0; i < 176; i++)
+    {
+        printf("%02X ", roundKey[i]);
+    }
+    printf("\n");
 
     printf("Encrypting...\n");
     uint8_t *inBuff, *outBuff;
@@ -342,16 +330,15 @@ int main(int argc, char *argv[])
     }
 
     // Write to the output file
-    fwrite(outFileBuff, sizeof(uint8_t), file_size, output_file);
+    fwrite(outFileBuff, sizeof(uint8_t), padded_size, output_file);
     fclose(output_file);
 
     printf("Encryption complete. Output written to \"%s\"\n", argv[2]);
 
-    printf("IN  OUT \n");
-    for (int i = 0; i < 32; i++)
-    {
-        printf("%02X  %02X\n", buffer[i], outFileBuff[i]);
-    }
+    // printf("IN  OUT \n");
+    // for(int i = 0; i < 32; i++){
+    //     printf("%02X  %02X\n",buffer[i], outFileBuff[i]);
+    // }
 
     cudaFree(inBuff);
     cudaFree(outBuff);
