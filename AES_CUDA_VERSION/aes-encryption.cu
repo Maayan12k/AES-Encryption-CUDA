@@ -31,6 +31,7 @@ static const uint8_t sbox[256] = {
     0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16};
 
 __constant__ uint8_t constant_sbox[256];
+__constant__ uint8_t constantRoundKey[176];
 
 /******************************************************************************************************* */
 /* Helper Functions*/
@@ -61,14 +62,14 @@ double myCPUTimer()
     return ((double)tp.tv_sec + (double)tp.tv_usec / 1.0e6);
 }
 
-void pad_data(uint8_t *data, size_t file_size, size_t padded_size)
+void padData(uint8_t *data, size_t file_size, size_t padded_size)
 {
     uint8_t padding_value = padded_size - file_size;
     memset(data + file_size, padding_value, padding_value);
 }
 
 // This function produces Nb(Nr+1) round keys. The round keys are used in each round to decrypt the states.
-static void KeyExpansion(uint8_t *RoundKey, const uint8_t *Key)
+static void keyExpansion(uint8_t *roundKey, const uint8_t *key)
 {
     unsigned i, j, k;
     uint8_t tempa[4]; // Used for the column/row operations
@@ -76,10 +77,10 @@ static void KeyExpansion(uint8_t *RoundKey, const uint8_t *Key)
     // The first round key is the key itself.
     for (i = 0; i < Nk; ++i)
     {
-        RoundKey[(i * 4) + 0] = Key[(i * 4) + 0];
-        RoundKey[(i * 4) + 1] = Key[(i * 4) + 1];
-        RoundKey[(i * 4) + 2] = Key[(i * 4) + 2];
-        RoundKey[(i * 4) + 3] = Key[(i * 4) + 3];
+        roundKey[(i * 4) + 0] = key[(i * 4) + 0];
+        roundKey[(i * 4) + 1] = key[(i * 4) + 1];
+        roundKey[(i * 4) + 2] = key[(i * 4) + 2];
+        roundKey[(i * 4) + 3] = key[(i * 4) + 3];
     }
 
     // All other round keys are found from the previous round keys.
@@ -87,10 +88,10 @@ static void KeyExpansion(uint8_t *RoundKey, const uint8_t *Key)
     {
 
         k = (i - 1) * 4;
-        tempa[0] = RoundKey[k + 0];
-        tempa[1] = RoundKey[k + 1];
-        tempa[2] = RoundKey[k + 2];
-        tempa[3] = RoundKey[k + 3];
+        tempa[0] = roundKey[k + 0];
+        tempa[1] = roundKey[k + 1];
+        tempa[2] = roundKey[k + 2];
+        tempa[3] = roundKey[k + 3];
 
         if (i % Nk == 0)
         {
@@ -111,10 +112,10 @@ static void KeyExpansion(uint8_t *RoundKey, const uint8_t *Key)
         }
         j = i * 4;
         k = (i - Nk) * 4;
-        RoundKey[j + 0] = RoundKey[k + 0] ^ tempa[0];
-        RoundKey[j + 1] = RoundKey[k + 1] ^ tempa[1];
-        RoundKey[j + 2] = RoundKey[k + 2] ^ tempa[2];
-        RoundKey[j + 3] = RoundKey[k + 3] ^ tempa[3];
+        roundKey[j + 0] = roundKey[k + 0] ^ tempa[0];
+        roundKey[j + 1] = roundKey[k + 1] ^ tempa[1];
+        roundKey[j + 2] = roundKey[k + 2] ^ tempa[2];
+        roundKey[j + 3] = roundKey[k + 3] ^ tempa[3];
     }
 }
 
@@ -126,40 +127,40 @@ static void KeyExpansion(uint8_t *RoundKey, const uint8_t *Key)
 /* AES Functions*/
 /* START */
 
-__device__ void subBytes(uint8_t *index)
+__device__ void subBytes(uint8_t *state)
 {
 
     for (int i = 0; i < 16; i++)
     {
-        uint8_t byte = index[i];
+        uint8_t byte = state[i];
         uint8_t first4Bits = (byte & 0xF0) >> 4;
         uint8_t last4Bits = byte & 0x0F;
         int sbox_index = (first4Bits * 16) + last4Bits;
 
-        index[i] = constant_sbox[sbox_index];
+        state[i] = constant_sbox[sbox_index];
     }
 }
 
-__device__ void shiftRows(uint8_t *index)
+__device__ void shiftRows(uint8_t *state)
 {
     uint8_t temp;
 
-    temp = index[1];
+    temp = state[1];
     for (int i = 1; i <= 9; i += 4)
-        index[i] = index[i + 4];
-    index[13] = temp;
+        state[i] = state[i + 4];
+    state[13] = temp;
 
-    temp = index[2];
-    index[2] = index[10];
-    index[10] = temp;
-    temp = index[6];
-    index[6] = index[14];
-    index[14] = temp;
+    temp = state[2];
+    state[2] = state[10];
+    state[10] = temp;
+    temp = state[6];
+    state[6] = state[14];
+    state[14] = temp;
 
-    temp = index[15];
+    temp = state[15];
     for (int i = 15; i >= 7; i -= 4)
-        index[i] = index[i - 4];
-    index[3] = temp;
+        state[i] = state[i - 4];
+    state[3] = temp;
 }
 
 __device__ __forceinline__ uint8_t xtime(uint8_t x)
@@ -167,7 +168,7 @@ __device__ __forceinline__ uint8_t xtime(uint8_t x)
     return (x << 1) ^ ((-(x >> 7)) & 0x1B);
 }
 
-__device__ void mixColumns(uint8_t *index)
+__device__ void mixColumns(uint8_t *state)
 {
     uint8_t temp[16];
 
@@ -176,10 +177,10 @@ __device__ void mixColumns(uint8_t *index)
     {
         int i = col * 4;
 
-        uint8_t s0 = index[i];
-        uint8_t s1 = index[i + 1];
-        uint8_t s2 = index[i + 2];
-        uint8_t s3 = index[i + 3];
+        uint8_t s0 = state[i];
+        uint8_t s1 = state[i + 1];
+        uint8_t s2 = state[i + 2];
+        uint8_t s3 = state[i + 3];
 
         uint8_t xt0 = xtime(s0);
         uint8_t xt1 = xtime(s1);
@@ -196,12 +197,16 @@ __device__ void mixColumns(uint8_t *index)
 #pragma unroll
     for (int i = 0; i < 16; i++)
     {
-        index[i] = temp[i];
+        state[i] = temp[i];
     }
 }
 
-__device__ void addRoundRey(uint8_t *index, uint8_t *roundKey)
+__device__ void addRoundKey(uint8_t *state, int round)
 {
+    for (int i = 0; i < 16; i++)
+    {
+        state[i] ^= constantRoundKey[round * 16 + i];
+    }
 }
 
 __global__ void encryptAes(uint8_t *in, uint8_t *out, unsigned int n)
@@ -212,12 +217,19 @@ __global__ void encryptAes(uint8_t *in, uint8_t *out, unsigned int n)
     if (offset >= n)
         return;
 
-    // subBytes(in + offset);
-    // for(int i = 0; i < 8; i++) //calling shift rows 4 times, returns the matrix to its original state, for testing purposes
-    // shiftRows(in + offset);
+    addRoundKey(in + offset, 0);
 
-    // for(int i = 0; i < 8; i++) //calling mix columns 4 times, returns the matrix to its original state, for testing purposes
-    //     mixColumns(in + offset);
+    for (int i = 1; i <= 9; i++)
+    {
+        subBytes(in + offset);
+        shiftRows(in + offset);
+        mixColumns(in + offset);
+        addRoundKey(in + offset, i);
+    }
+
+    subBytes(in + offset);
+    shiftRows(in + offset);
+    addRoundKey(in + offset, 10);
 
     // Copy 16 bytes from input to output
     for (int i = 0; i < 16; i++)
@@ -273,7 +285,7 @@ int main(int argc, char *argv[])
     fread(buffer, 1, file_size, input_file);
     fclose(input_file);
 
-    pad_data(buffer, file_size, padded_size);
+    padData(buffer, file_size, padded_size);
 
     // for (int i = 0; i < padded_size; i++) {
     //     for (int bit = 7; bit >= 0; bit--) {
@@ -288,8 +300,8 @@ int main(int argc, char *argv[])
         0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
         0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c};
 
-    uint8_t roundKey[176];       // Round keys
-    KeyExpansion(roundKey, key); // Generate round keys
+    uint8_t roundKey[176];
+    keyExpansion(roundKey, key);
 
     printf("Key: ");
     for (int i = 0; i < 176; i++)
@@ -306,6 +318,7 @@ int main(int argc, char *argv[])
     cudaMemcpy(inBuff, buffer, sizeof(uint8_t) * padded_size, cudaMemcpyHostToDevice);
 
     cudaMemcpyToSymbol(constant_sbox, sbox, 256 * sizeof(uint8_t));
+    cudaMemcpyToSymbol(constantRoundKey, roundKey, 176 * sizeof(uint8_t));
 
     int numThreads = padded_size / 16;
     dim3 blockDim(16);
