@@ -157,15 +157,67 @@ __device__ void subBytes(uint8_t *index)
     }
 }
 
-__device__ void mixColumns()
+__device__ void shiftRows(uint8_t *index)
 {
+    uint8_t temp;
+
+    temp = index[1];
+    for (int i = 1; i <= 9; i += 4)
+        index[i] = index[i + 4];
+    index[13] = temp;
+
+    temp = index[2];
+    index[2] = index[10];
+    index[10] = temp;
+    temp = index[6];
+    index[6] = index[14];
+    index[14] = temp;
+
+    temp = index[15];
+    for (int i = 15; i >= 7; i -= 4)
+        index[i] = index[i - 4];
+    index[3] = temp;
+}
+
+__device__ __forceinline__ uint8_t xtime(uint8_t x)
+{
+    return (x << 1) ^ ((-(x >> 7)) & 0x1B);
+}
+
+__device__ void mixColumns(uint8_t *state)
+{
+    uint8_t temp[16];
+
+#pragma unroll
+    for (int col = 0; col < 4; col++)
+    {
+        int i = col * 4;
+
+        uint8_t s0 = state[i];
+        uint8_t s1 = state[i + 1];
+        uint8_t s2 = state[i + 2];
+        uint8_t s3 = state[i + 3];
+
+        uint8_t xt0 = xtime(s0);
+        uint8_t xt1 = xtime(s1);
+        uint8_t xt2 = xtime(s2);
+        uint8_t xt3 = xtime(s3);
+
+        // MixColumns matrix multiplication in GF(2^8)
+        temp[i + 0] = xt0 ^ (xt1 ^ s1) ^ s2 ^ s3; // 2*s0 + 3*s1 + s2   + s3
+        temp[i + 1] = s0 ^ xt1 ^ (xt2 ^ s2) ^ s3; // s0   + 2*s1 + 3*s2 + s3
+        temp[i + 2] = s0 ^ s1 ^ xt2 ^ (xt3 ^ s3); // s0   + s1   + 2*s2 + 3*s3
+        temp[i + 3] = (xt0 ^ s0) ^ s1 ^ s2 ^ xt3; // 3*s0 + s1   + s2   + 2*s3
+    }
+
+#pragma unroll
+    for (int i = 0; i < 16; i++)
+    {
+        state[i] = temp[i];
+    }
 }
 
 __device__ void addRoundRey()
-{
-}
-
-__device__ void shiftRows()
 {
 }
 

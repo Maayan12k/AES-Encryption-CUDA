@@ -180,8 +180,42 @@ __device__ void shiftRows(uint8_t *index)
     index[3] = temp;
 }
 
-__device__ void mixColumns()
+__device__ __forceinline__ uint8_t xtime(uint8_t x)
 {
+    return (x << 1) ^ ((-(x >> 7)) & 0x1B);
+}
+
+__device__ void mixColumns(uint8_t *state)
+{
+    uint8_t temp[16];
+
+#pragma unroll
+    for (int col = 0; col < 4; col++)
+    {
+        int i = col * 4;
+
+        uint8_t s0 = state[i];
+        uint8_t s1 = state[i + 1];
+        uint8_t s2 = state[i + 2];
+        uint8_t s3 = state[i + 3];
+
+        uint8_t xt0 = xtime(s0);
+        uint8_t xt1 = xtime(s1);
+        uint8_t xt2 = xtime(s2);
+        uint8_t xt3 = xtime(s3);
+
+        // MixColumns matrix multiplication in GF(2^8)
+        temp[i + 0] = xt0 ^ (xt1 ^ s1) ^ s2 ^ s3; // 2*s0 + 3*s1 + s2   + s3
+        temp[i + 1] = s0 ^ xt1 ^ (xt2 ^ s2) ^ s3; // s0   + 2*s1 + 3*s2 + s3
+        temp[i + 2] = s0 ^ s1 ^ xt2 ^ (xt3 ^ s3); // s0   + s1   + 2*s2 + 3*s3
+        temp[i + 3] = (xt0 ^ s0) ^ s1 ^ s2 ^ xt3; // 3*s0 + s1   + s2   + 2*s3
+    }
+
+#pragma unroll
+    for (int i = 0; i < 16; i++)
+    {
+        state[i] = temp[i];
+    }
 }
 
 __device__ void addRoundRey()
@@ -197,8 +231,11 @@ __global__ void encryptAes(uint8_t *in, uint8_t *out, unsigned int n)
         return;
 
     // subBytes(in + offset);
-    for (int i = 0; i < 4; i++) // calling shift rows 4 times, returns the matrix to its original state, for testing purposes
+    for (int i = 0; i < 8; i++) // calling shift rows 4 times, returns the matrix to its original state, for testing purposes
         shiftRows(in + offset);
+
+    for (int i = 0; i < 8; i++) // calling mix columns 4 times, returns the matrix to its original state, for testing purposes
+        mixColumns(in + offset);
 
     // Copy 16 bytes from input to output
     for (int i = 0; i < 16; i++)
