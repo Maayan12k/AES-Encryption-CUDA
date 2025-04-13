@@ -217,7 +217,7 @@ __global__ void encryptAes(uint8_t *in, uint8_t *out, unsigned int n)
     // shiftRows(in + offset);
 
     // for(int i = 0; i < 8; i++) //calling mix columns 4 times, returns the matrix to its original state, for testing purposes
-    mixColumns(in + offset);
+    //     mixColumns(in + offset);
 
     // Copy 16 bytes from input to output
     for (int i = 0; i < 16; i++)

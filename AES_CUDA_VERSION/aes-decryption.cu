@@ -156,18 +156,15 @@ __device__ void invShiftRows(uint8_t *index)
 }
 
 __device__ uint8_t gmul(uint8_t a, uint8_t b)
-{
-    uint8_t result = 0;
-#pragma unroll
-    for (int i = 0; i < 8; i++)
+{ // https://crypto.stackexchange.com/questions/71204/how-are-these-aes-mixcolumn-multiplication-tables-calculated
+    uint8_t p = 0;
+    while (b > 0)
     {
-        result ^= -(b & 1) & a;
-        uint8_t high_bit = a >> 7;
-        a <<= 1;
-        a ^= (0x1b & -high_bit);
+        p ^= a & -(b & 1);
+        a = (a << 1) ^ (0x11b & -(a >> 7));
         b >>= 1;
     }
-    return result;
+    return p;
 }
 
 __device__ void invMixColumns(uint8_t *index)
@@ -210,8 +207,8 @@ __global__ void decryptAes(uint8_t *in, uint8_t *out, unsigned int n)
         return;
 
     // invSubBytes(in + offset);
-
-    invShiftRows(in + offset);
+    // for(int i = 0; i < 8; i++) //calling mix columns 4 times, returns the matrix to its original state, for testing purposes
+    //     invMixColumns(in + offset);
 
     // Copy 16 bytes from input to output
     for (int i = 0; i < 16; i++)
