@@ -7,16 +7,9 @@
 #include <sys/stat.h>
 #include <cstdio>
 
-/**
-    srun -A bchn-delta-gpu --time=00:20:00 --nodes=1 --tasks-per-node=16 --partition=gpuA100x4,gpuA40x4 --gpus=1 --mem=16g --pty /bin/bash
-*/
-
 #define BLOCK_SIZE 16
-#define Nk 4  // The number of 32 bit words in a key.
-#define Nr 10 // The number of rounds in AES Cipher.
-#define getSBoxValue(num) (sbox[(num)])
-static const uint8_t Rcon[11] = {
-    0x8d, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36};
+#define Nk 4
+#define Nr 10
 
 static const uint8_t sbox[256] = {
     // 0     1    2      3     4    5     6     7      8    9     A      B    C     D     E     F
@@ -55,6 +48,9 @@ static const uint8_t inv_sbox[256] = {
     0xa0, 0xe0, 0x3b, 0x4d, 0xae, 0x2a, 0xf5, 0xb0, 0xc8, 0xeb, 0xbb, 0x3c, 0x83, 0x53, 0x99, 0x61,
     0x17, 0x2b, 0x04, 0x7e, 0xba, 0x77, 0xd6, 0x26, 0xe1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0c, 0x7d};
 
+static const uint8_t Rcon[11] = {
+    0x8d, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36};
+
 __constant__ uint8_t constant_inv_sbox[256];
 __constant__ uint8_t constantRoundKey[176];
 
@@ -62,6 +58,7 @@ __constant__ uint8_t constantRoundKey[176];
 /* Helper Functions*/
 /* START */
 
+#define getSBoxValue(num) (sbox[(num)])
 #define CHECK(call)                                                                  \
     {                                                                                \
         const cudaError_t cuda_ret = call;                                           \
@@ -80,13 +77,11 @@ double myCPUTimer()
     return ((double)tp.tv_sec + (double)tp.tv_usec / 1.0e6);
 }
 
-// This function produces Nb(Nr+1) round keys. The round keys are used in each round to decrypt the states.
 static void keyExpansion(uint8_t *roundKey, const uint8_t *key)
 {
     unsigned i, j, k;
-    uint8_t tempa[4]; // Used for the column/row operations
+    uint8_t tempa[4];
 
-    // The first round key is the key itself.
     for (i = 0; i < Nk; ++i)
     {
         roundKey[(i * 4) + 0] = key[(i * 4) + 0];
@@ -95,7 +90,6 @@ static void keyExpansion(uint8_t *roundKey, const uint8_t *key)
         roundKey[(i * 4) + 3] = key[(i * 4) + 3];
     }
 
-    // All other round keys are found from the previous round keys.
     for (i = Nk; i < Nk * (Nr + 1); ++i)
     {
 
@@ -107,14 +101,12 @@ static void keyExpansion(uint8_t *roundKey, const uint8_t *key)
 
         if (i % Nk == 0)
         {
-            // Rotate word
             const uint8_t u8tmp = tempa[0];
             tempa[0] = tempa[1];
             tempa[1] = tempa[2];
             tempa[2] = tempa[3];
             tempa[3] = u8tmp;
 
-            // substitue bytes in word
             tempa[0] = getSBoxValue(tempa[0]);
             tempa[1] = getSBoxValue(tempa[1]);
             tempa[2] = getSBoxValue(tempa[2]);
@@ -176,7 +168,7 @@ __device__ void invShiftRows(uint8_t *index)
 }
 
 __device__ uint8_t gmul(uint8_t a, uint8_t b)
-{ // https://crypto.stackexchange.com/questions/71204/how-are-these-aes-mixcolumn-multiplication-tables-calculated
+{
     uint8_t p = 0;
     while (b > 0)
     {
@@ -225,14 +217,13 @@ __device__ void addRoundKey(uint8_t *state, int round)
 __global__ void decryptAes(uint8_t *in, uint8_t *out, unsigned int n)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int offset = idx * 16; // Each thread processes 16 bytes
+    int offset = idx * 16;
 
     if (offset >= n)
         return;
 
     addRoundKey(in + offset, 10);
 
-    // Rounds 9 -> 1
     for (int i = 9; i >= 1; i--)
     {
         invShiftRows(in + offset);
@@ -241,12 +232,10 @@ __global__ void decryptAes(uint8_t *in, uint8_t *out, unsigned int n)
         invMixColumns(in + offset);
     }
 
-    // Final round (round 0)
     invShiftRows(in + offset);
     invSubBytes(in + offset);
     addRoundKey(in + offset, 0);
 
-    // Copy 16 bytes from input to output
     for (int i = 0; i < 16; i++)
     {
         if (offset + i < n)
@@ -297,15 +286,6 @@ int main(int argc, char *argv[])
     fread(buffer, 1, file_size, input_file);
     fclose(input_file);
 
-    // for (int i = 0; i < padded_size; i++) {
-    //     for (int bit = 7; bit >= 0; bit--) {
-    //         printf("%d", (buffer[i] >> bit) & 1);  // Extract and print each bit
-    //     }
-    //     printf(" ");  // Separate bytes with a space
-    // }
-    // printf("\n");
-
-    // AES key
     uint8_t key[BLOCK_SIZE] = {
         0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
         0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c};
@@ -351,11 +331,6 @@ int main(int argc, char *argv[])
     fclose(output_file);
 
     printf("Decryption complete. Output written to \"%s\"\n", argv[2]);
-
-    // printf("IN  OUT \n");
-    // for(int i = 0; i < 4; i++){
-    //     printf("%02X  %02X\n",buffer[i], outFileBuff[i]);
-    // }
 
     cudaFree(inBuff);
     cudaFree(outBuff);
