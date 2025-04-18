@@ -15,5 +15,6 @@ This repository contains a CUDA-based AES encryption system designed to efficien
 
 ## Future Work  
 - Expand to AES encryption with expansion to AES 192 and AES 256
+- Deploy a mechanism for mimicking the security benefits on AES CBC(block chaining)
 - Improve memory optimizations with the usage of local memory
 - Explore CUDA optimizations
