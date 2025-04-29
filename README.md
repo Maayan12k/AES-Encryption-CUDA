@@ -28,4 +28,4 @@ This implementation demonstrates a **~6000% speedup** over sequential CPU-based 
 
 ## Acknowledgements
 
-- Sequential CPU open source version Tiny AES was used for reference and implementation[https://github.com/kokke/tiny-AES-c].
+- Sequential open source CPU version Tiny-AES was used for reference and implementation[https://github.com/kokke/tiny-AES-c].
