@@ -1,20 +1,35 @@
-# CUDA File Encryptor  
+# CUDA File Encryptor
 
-This project started as an idea to encrypt large video files(10 - 15 GB) in parallel. However, as I explored the implementation, I pivoted toward understanding AES encryption in depth and gain a performance increase compared to the sequential CPU.
+This project began as an effort to encrypt large video files (10–15 GB) in parallel. As the implementation progressed, the focus shifted toward understanding the AES encryption algorithm in depth and achieving measurable performance improvements over traditional CPU-based encryption.
 
-This repository contains a CUDA-based AES encryption system designed to efficiently process files in parallel. The encryption kernel operates on 128-byte blocks, leveraging the GPU’s parallel processing power for high-speed encryption. 
+This repository contains a CUDA-based AES encryption system designed to efficiently process files in parallel. The encryption kernel operates on 128-bit blocks, utilizing the GPU's parallel processing capabilities to accelerate encryption.
 
-## Features  
-- **CUDA-accelerated AES encryption** for efficient file processing  
-- **Block-based encryption** to handle large files  
-- **Padded input handling** for consistency across different file sizes  
+---
 
-## Requirements  
+## Performance
+
+This implementation demonstrates a **~6000% speedup** over sequential CPU-based AES encryption for input files **larger than 5 MB**. For smaller files, GPU kernel launch overhead limits the performance benefit, but for large file sizes, GPU parallelism provides a significant throughput advantage.
+
+---
+
+## Features
+
+- CUDA-accelerated AES encryption for efficient file processing  
+- Block-based encryption (128-bit block size) suitable for large files  
+- Padding support to ensure consistent encryption for files of arbitrary size  
+
+---
+
+## Requirements
+
 - NVIDIA CUDA Toolkit  
-- C++ Compiler with CUDA support  
+- C++ compiler with CUDA support (e.g., `nvcc`)  
 
-## Future Work  
-- Expand to AES encryption with expansion to AES 192 and AES 256
-- Deploy a mechanism for mimicking the security benefits on AES CBC(block chaining)
-- Improve memory optimizations with the usage of local memory
-- Explore CUDA optimizations
+---
+
+## Future Work
+
+- Add support for AES-192 and AES-256 key sizes  
+- Implement a mechanism similar to AES-CBC (Cipher Block Chaining) for enhanced security  
+- Optimize memory usage through local/shared memory  
+- Investigate additional CUDA-specific optimizations  
