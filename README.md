@@ -2,7 +2,7 @@
 
 This project began as an effort to encrypt large video files (10–15 GB) in parallel. As the implementation progressed, the focus shifted toward understanding the AES encryption algorithm in depth and achieving measurable performance improvements over traditional CPU-based encryption.
 
-This repository contains a CUDA-based AES encryption system designed to efficiently process files in parallel and a sequential CPU version used for comparison(listed here)[https://github.com/kokke/tiny-AES-c]. The encryption kernel operates on 128-bit blocks, utilizing the GPU's parallel processing capabilities to accelerate encryption.
+This repository contains a CUDA-based AES encryption system designed to efficiently process files in parallel and a sequential CPU version used for comparison[https://github.com/kokke/tiny-AES-c]. The encryption kernel operates on 128-bit blocks, utilizing the GPU's parallel processing capabilities to accelerate encryption.
 
 ## Performance
 
