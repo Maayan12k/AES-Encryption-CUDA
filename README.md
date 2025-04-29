@@ -29,3 +29,10 @@ This implementation demonstrates a **~6000% speedup** over sequential CPU-based 
 ## Acknowledgements
 
 - Sequential open source CPU version Tiny-AES was used for reference and implementation[https://github.com/kokke/tiny-AES-c].
+- "Cryptography and Network Security" by William Stallings
+- CUDA Programming Guide – NVIDIA
+- Parallel AES Algorithm using CUDA: [https://github.com/allenlee820202/Parallel-AES-Algorithm-using-CUDA]
+
+## Links
+
+- Short presentation explanation of this project[https://www.youtube.com/watch?v=XGY5ay8BiMI].
