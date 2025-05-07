@@ -24,7 +24,7 @@ This implementation demonstrates a **~6000% speedup** over sequential CPU-based 
 - Add support for AES-192 and AES-256 key sizes  
 - Implement a mechanism similar to AES-CBC (Cipher Block Chaining) for enhanced security  
 - Optimize memory usage through local/shared memory  
-- Investigate additional CUDA-specific optimizations
+- Investigate additional CUDA-specific optimizations such as asynchronous memory transfer
 
 ## Acknowledgements
 
@@ -32,7 +32,3 @@ This implementation demonstrates a **~6000% speedup** over sequential CPU-based 
 - "Cryptography and Network Security" by William Stallings
 - CUDA Programming Guide – NVIDIA
 - Parallel AES Algorithm using CUDA: [https://github.com/allenlee820202/Parallel-AES-Algorithm-using-CUDA]
-
-## Links
-
-- Short presentation explanation of this project[https://www.youtube.com/watch?v=XGY5ay8BiMI].
